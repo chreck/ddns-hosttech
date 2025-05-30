@@ -14,6 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY ddns-hosttech.py .
+# Copy .env file if it exists (optional)
+COPY .env* ./
 
 # Make the script executable
 RUN chmod +x ddns-hosttech.py
@@ -22,4 +24,5 @@ RUN chmod +x ddns-hosttech.py
 ENTRYPOINT ["python", "ddns-hosttech.py"]
 
 # Default command (can be overridden at runtime)
-CMD ["-h"]
+# Empty CMD means it will use environment variables from .env file
+CMD []
