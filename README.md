@@ -14,7 +14,7 @@ A Python application to automatically update DNS entries on Hosttech nameservers
 
 - Python 3.6+
 - Docker (optional, for containerized deployment)
-- Hosttech API token
+- Hosttech API token from https://www.myhosttech.eu/user/dns/api
 
 ## Installation
 
