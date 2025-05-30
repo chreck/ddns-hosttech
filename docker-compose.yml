@@ -1,0 +1,17 @@
+version: '3'
+
+services:
+  ddns-updater:
+    image: christopheck/hosttech-ddns:latest
+    container_name: hosttech-ddns
+    restart: unless-stopped
+    # Uncomment the following lines to use environment variables directly
+    # environment:
+    #   - TOKEN=your_token_here
+    #   - DOMAINS=example.com,*.example.com
+    #   - INTERVAL=5
+    # Or use an .env file (recommended for security)
+    env_file:
+      - .env
+    # Alternatively, you can build from local source
+    # build: .

@@ -2,13 +2,17 @@
 
 A Python application to automatically update DNS entries on Hosttech nameservers based on your current public IP address.
 
+[![Docker Image Version](https://img.shields.io/docker/v/christopheck/hosttech-ddns?sort=semver&style=flat-square)](https://hub.docker.com/r/christopheck/hosttech-ddns)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 ## Features
 
 - Automatically detects your current public IP address
 - Updates DNS A records on Hosttech nameservers
-- Supports multiple domains
+- Supports multiple domains and wildcard domains (`*.domain.com`)
 - Configurable update interval
 - Runs as a Docker container for easy deployment
+- Environment variable support via `.env` file
 
 ## Requirements
 
@@ -28,10 +32,17 @@ A Python application to automatically update DNS entries on Hosttech nameservers
 
 ### Docker Installation
 
-1. Build the Docker image:
-   ```
-   docker build -t hosttech-ddns .
-   ```
+#### Option 1: Pull from Docker Hub (recommended)
+
+```bash
+docker pull christopheck/hosttech-ddns:latest
+```
+
+#### Option 2: Build locally
+
+```bash
+docker build -t hosttech-ddns .
+```
 
 ## Usage
 
@@ -51,31 +62,58 @@ python ddns-hosttech.py -t YOUR_API_TOKEN -d example.com -d subdomain.example.co
 
 ### Docker Usage
 
-Run as a Docker container:
+#### Using Command Line Arguments
+
+Run as a Docker container with the official image:
 
 ```bash
-docker run -d --name hosttech-ddns hosttech-ddns -t YOUR_API_TOKEN -d example.com -i 10
+docker run -d --name hosttech-ddns christopheck/hosttech-ddns -t YOUR_API_TOKEN -d example.com -i 10
 ```
 
-For multiple domains:
+For multiple domains including wildcard domains:
 
 ```bash
-docker run -d --name hosttech-ddns hosttech-ddns -t YOUR_API_TOKEN -d example.com -d subdomain.example.com -i 10
+docker run -d --name hosttech-ddns christopheck/hosttech-ddns -t YOUR_API_TOKEN -d example.com -d *.example.com -i 10
+```
+
+#### Using Environment Variables
+
+Create an `.env` file with your configuration:
+
+```
+# Hosttech API token
+TOKEN=your_token_here
+# Domains to update, separated by commas
+DOMAINS=example.com,*.example.com
+# Update interval in minutes
+INTERVAL=5
+```
+
+Then run the container with the `.env` file:
+
+```bash
+docker run -d --name hosttech-ddns --env-file .env christopheck/hosttech-ddns
 ```
 
 ## Docker Compose Example
 
-Create a `docker-compose.yml` file:
+A `docker-compose.yml` file is included in the repository. You can use it as follows:
 
 ```yaml
 version: '3'
 
 services:
   ddns-updater:
-    build: .
+    image: christopheck/hosttech-ddns:latest
     container_name: hosttech-ddns
     restart: unless-stopped
-    command: -t YOUR_API_TOKEN -d example.com -i 10
+    env_file:
+      - .env
+    # Alternatively, you can use environment variables directly
+    # environment:
+    #   - TOKEN=your_token_here
+    #   - DOMAINS=example.com,*.example.com
+    #   - INTERVAL=5
 ```
 
 Then run:
@@ -87,8 +125,21 @@ docker-compose up -d
 ## Security Considerations
 
 - Store your API token securely
-- Consider using Docker secrets or environment variables for the token in production
+- Use the `.env` file or Docker secrets for sensitive information
+- The `.env` file is included in `.gitignore` and `.dockerignore` to prevent accidental exposure
+
+## Versioning
+
+This project follows [Semantic Versioning](https://semver.org/). The current version is specified in the `VERSION` file and can be checked with:
+
+```bash
+docker run --rm christopheck/hosttech-ddns --version
+```
 
 ## License
 
 This project is open source and available under the MIT License.
+
+## Author
+
+Christian Folini
