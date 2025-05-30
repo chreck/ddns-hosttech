@@ -1,0 +1,33 @@
+# Python virtual environments
+venv
+.venv
+
+# Local configuration files
+ddns-hosttech.sh
+.env
+
+# Git related
+.git
+.gitignore
+
+# Cache files
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.pytest_cache
+.coverage
+htmlcov/
+
+# IDE related
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build related
+dist/
+build/
+*.egg-info/
