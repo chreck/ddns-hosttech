@@ -2,10 +2,13 @@
 # Documentation at https://www.hosttech.ch/blog/neue-api/
 # and https://api.ns1.hosttech.eu/api/documentation/#/
 
+__version__ = "1.0.0"
+
 import json
 import time
 import logging
 import os
+import sys
 from typing import List, Dict, Any, Optional
 from requests import Response, get, put, auth
 from argparse import ArgumentParser
@@ -330,7 +333,7 @@ def main():
     
     parser = ArgumentParser(
         prog="ddns-hosttech",
-        description="Update DNS entries on Hosttech nameservers",
+        description=f"Update DNS entries on Hosttech nameservers (v{__version__})",
     )
     
     # Get default values from environment variables if available
@@ -344,6 +347,8 @@ def main():
     parser.add_argument("-d", "--domain", action="append", help="Domain(s) to update (can also be set via DOMAINS env var)")
     parser.add_argument("-i", "--interval", type=int, default=default_interval, 
                         help=f"Update interval in minutes (default: {default_interval})")
+    parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}",
+                        help="Show program's version number and exit")
     
     args = parser.parse_args()
     
