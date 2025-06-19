@@ -2,7 +2,7 @@
 # Documentation at https://www.hosttech.ch/blog/neue-api/
 # and https://api.ns1.hosttech.eu/api/documentation/#/
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 import json
 import time
