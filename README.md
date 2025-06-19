@@ -50,6 +50,7 @@ docker build -t hosttech-ddns .
 1. Create or select a Buildx builder (one-time setup):
 
 ```bash
+docker login
 # create (only first time)
 docker buildx create --name multiarch --use
 # or reuse if already created
@@ -61,7 +62,7 @@ docker buildx inspect --bootstrap
 2. Build and push a multi-architecture image:
 
 ```bash
-VERSION=1.3.0  # adjust version
+VERSION=$(cat VERSION)
 
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
