@@ -239,7 +239,7 @@ class HosttechApi:
             valid = (
                 data["id"] == record_id
                 and data["type"] == record_type
-                and data["name"] == record_name
+                and (data["name"] or "") == record_name
                 and data.get("ttl") == record_ttl
             )
             if record_type == "A":
