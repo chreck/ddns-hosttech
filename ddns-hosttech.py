@@ -141,7 +141,6 @@ class HosttechApi:
                 
             all_records = response.json()["data"]
             logger.info(f"Found {len(all_records)} total records for zone ID {zone_id}")
-            print(all_records)
             
             # If this is a wildcard domain, we need to find or create the wildcard record
             if is_wildcard:

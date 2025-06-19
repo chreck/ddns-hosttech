@@ -8,9 +8,10 @@ A Python application to automatically update DNS entries on Hosttech nameservers
 ## Features
 
 - Automatically detects your current public IP address
-- Updates DNS A records on Hosttech nameservers
+- Updates DNS A (IPv4) and AAAA (IPv6) records on Hosttech nameservers
 - Supports multiple domains and wildcard domains (`*.domain.com`)
-- Configurable update interval
+- Configurable update interval (or single-run mode via `--no-interval`)
+- Automatically cleans up duplicate DNS records
 - Runs as a Docker container for easy deployment
 - Environment variable support via `.env` file
 
@@ -51,6 +52,7 @@ docker build -t hosttech-ddns .
 - `-t, --token`: API token for authentication (required)
 - `-d, --domain`: Domain(s) to update (required, can be specified multiple times)
 - `-i, --interval`: Update interval in minutes (default: 5)
+- `--no-interval`: Run once and exit (no loop)
 
 ### Local Usage
 
