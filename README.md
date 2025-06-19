@@ -45,6 +45,33 @@ docker pull christopheck/hosttech-ddns:latest
 docker build -t hosttech-ddns .
 ```
 
+#### Option 3: Build multi-arch (amd64 & arm64) with Buildx
+
+1. Create or select a Buildx builder (one-time setup):
+
+```bash
+# create (only first time)
+docker buildx create --name multiarch --use
+# or reuse if already created
+docker buildx use multiarch
+# start emulation for additional architectures
+docker buildx inspect --bootstrap
+```
+
+2. Build and push a multi-architecture image:
+
+```bash
+VERSION=1.3.0  # adjust version
+
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  -t christopheck/hosttech-ddns:$VERSION \
+  -t christopheck/hosttech-ddns:latest \
+  --push .
+```
+
+`--push` uploads the manifest and both architecture layers directly to Docker Hub. If you also need a local image, remove `--push` and add `--load` (only loads the native architecture).
+
 ## Usage
 
 ### Command Line Arguments
