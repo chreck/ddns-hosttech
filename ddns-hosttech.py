@@ -10,7 +10,7 @@ import logging
 import os
 import sys
 from typing import List, Dict, Any, Optional
-from requests import Response, get, put, auth
+from requests import Response, get, post, put, delete, auth
 from argparse import ArgumentParser
 from dotenv import load_dotenv
 
@@ -47,8 +47,11 @@ class HosttechApi:
         self.domains = domains
         self.api_base_url = "https://api.ns1.hosttech.eu"
         
-    def get_current_ip(self) -> str:
+    def get_current_ip(self, ipv4: bool = True) -> str:
         """Get the current public IP address
+        
+        Args:
+            ipv4: Whether to get the IPv4 address (default: True)
         
         Returns:
             Current public IP address as string
@@ -57,11 +60,12 @@ class HosttechApi:
             Exception: If IP address cannot be retrieved
         """
         try:
-            response: Response = get("https://ipv4.ip.nf/me.json")
+            response: Response = get("https://checkip.amazonaws.com" if ipv4 else "https://ifconfig.me/ip")
             if response.status_code != 200:
                 raise Exception(f"API returned status code {response.status_code}")
-                
-            ip = response.json()["ip"]["ip"]
+            
+            # Remove any zone-id suffix ("%eth0") for IPv6 and trailing whitespace/newlines
+            ip = response.text.split('%')[0].strip()
             logger.info(f"Current IP address: {ip}")
             return ip
         except Exception as e:
@@ -116,7 +120,7 @@ class HosttechApi:
             zone_id: Zone ID for the domain
             
         Returns:
-            List of A records
+            List of A, AAAA, and CNAME records
             
         Raises:
             Exception: If records cannot be retrieved
@@ -127,7 +131,7 @@ class HosttechApi:
             
             # Get all A records for the zone
             response: Response = get(
-                f"{self.api_base_url}/api/user/v1/zones/{zone_id}/records?type=A",
+                f"{self.api_base_url}/api/user/v1/zones/{zone_id}/records",
                 headers={"accept": "application/json"},
                 auth=BearerAuth(self.token),
             )
@@ -136,7 +140,8 @@ class HosttechApi:
                 raise Exception(f"API returned status code {response.status_code}")
                 
             all_records = response.json()["data"]
-            logger.info(f"Found {len(all_records)} total A records for zone ID {zone_id}")
+            logger.info(f"Found {len(all_records)} total records for zone ID {zone_id}")
+            print(all_records)
             
             # If this is a wildcard domain, we need to find or create the wildcard record
             if is_wildcard:
@@ -157,19 +162,22 @@ class HosttechApi:
                 records = filtered_records
                 logger.info(f"Filtered to {len(records)} wildcard A records for domain {domain}")
             else:
-                # For normal domains, filter to get the specific subdomain
-                # The API expects the name field to contain just the subdomain part
-                subdomain = domain.split('.', 1)[0] if '.' in domain else ""
+                # For normal domains, determine the relative record name.
+                # Root domain (e.g., "example.com") uses an empty string.
+                parts = domain.split('.')
+                subdomain = ''
+                if len(parts) > 2:
+                    subdomain = parts[0]
                 
                 if subdomain:
                     # Filter for records with matching name
                     filtered_records = [r for r in all_records if r.get("name", "") == subdomain]
-                    logger.info(f"Filtered to {len(filtered_records)} A records for subdomain {subdomain}")
+                    logger.info(f"Filtered to {len(filtered_records)} records for subdomain {subdomain}")
                     records = filtered_records
                 else:
                     # This is the root domain, look for records with empty name or @ symbol
-                    filtered_records = [r for r in all_records if r.get("name", "") in ["", "@"]]
-                    logger.info(f"Filtered to {len(filtered_records)} A records for root domain")
+                    filtered_records = [r for r in all_records if r.get("name") in ["", "@", None]]
+                    logger.info(f"Filtered to {len(filtered_records)} records for root domain")
                     records = filtered_records
                 
             return records
@@ -204,9 +212,17 @@ class HosttechApi:
             send_data = {
                 "type": record_type,
                 "name": record_name,
-                "ipv4": new_ip,
                 "ttl": record_ttl,
             }
+
+            # Add the IP to the correct field based on record type
+            if record_type == "A":
+                send_data["ipv4"] = new_ip
+            elif record_type == "AAAA":
+                send_data["ipv6"] = new_ip
+            else:
+                logger.warning(f"Unsupported record type {record_type}, skipping update")
+                return False
             
             response = put(
                 f"{self.api_base_url}/api/user/v1/zones/{zone_id}/records/{record_id}",
@@ -221,13 +237,17 @@ class HosttechApi:
             data = response.json()["data"]
             
             # Verify the update was successful
-            if (
+            valid = (
                 data["id"] == record_id
                 and data["type"] == record_type
                 and data["name"] == record_name
-                and data["ipv4"] == new_ip
-                and data["ttl"] == record_ttl
-            ):
+                and data.get("ttl") == record_ttl
+            )
+            if record_type == "A":
+                valid = valid and data.get("ipv4") == new_ip
+            elif record_type == "AAAA":
+                valid = valid and data.get("ipv6") == new_ip
+            if valid:
                 logger.info(f"Successfully updated record {record_name} to {new_ip}")
                 return True
             else:
@@ -237,7 +257,7 @@ class HosttechApi:
             logger.error(f"Could not update record {record.get('name', 'unknown')}: {e}")
             raise Exception(f"Could not update record: {e}")
     
-    def create_wildcard_record(self, zone_id: int, ip: str) -> bool:
+    def create_wildcard_record(self, zone_id: int, ip: str, ipv4: bool = True) -> bool:
         """Create a new wildcard A record in a zone
         
         Args:
@@ -250,13 +270,16 @@ class HosttechApi:
         try:
             # According to the API docs, for wildcard records, the name should be "*"
             send_data = {
-                "type": "A",
+                "type": "A" if ipv4 else "AAAA",
                 "name": "*",  # Just the asterisk for wildcard
-                "ipv4": ip,
                 "ttl": 3600,
             }
+            if ipv4:
+                send_data["ipv4"] = ip
+            else:
+                send_data["ipv6"] = ip
             
-            response = put(
+            response = post(
                 f"{self.api_base_url}/api/user/v1/zones/{zone_id}/records",
                 data=json.dumps(send_data),
                 headers={"accept": "application/json", "content-type": "application/json"},
@@ -273,12 +296,76 @@ class HosttechApi:
         except Exception as e:
             logger.error(f"Could not create wildcard record: {e}")
             return False
-    
+
+    def create_record(self, zone_id: int, name: str, ip: str, ipv4: bool = True) -> bool:
+        """Create an A or AAAA record (generic helper)."""
+        try:
+            send_data = {
+                "type": "A" if ipv4 else "AAAA",
+                "name": name,
+                "ttl": 3600,
+            }
+            if ipv4:
+                send_data["ipv4"] = ip
+            else:
+                send_data["ipv6"] = ip
+
+            response = post(
+                f"{self.api_base_url}/api/user/v1/zones/{zone_id}/records",
+                data=json.dumps(send_data),
+                headers={"accept": "application/json", "content-type": "application/json"},
+                auth=BearerAuth(self.token),
+            )
+            if response.status_code not in [200, 201]:
+                raise Exception(f"API returned status code {response.status_code}")
+            data = response.json()["data"]
+            logger.info(f"Successfully created record with ID {data['id']}")
+            return True
+        except Exception as e:
+            logger.error(f"Could not create record: {e}")
+            return False
+
+    @staticmethod
+    def _record_exists(records: List[Dict[str, Any]], rec_type: str, acceptable_names: List[str]) -> bool:
+        """Return True if a record of `rec_type` with name in acceptable_names exists."""
+        return any(r.get("type") == rec_type and r.get("name") in acceptable_names for r in records)
+
+    @staticmethod
+    def _log_duplicates(records: List[Dict[str, Any]], rec_type: str, acceptable_names: List[str]) -> None:
+        """Log a warning if more than one record exists for the same name and type."""
+        dups = [r for r in records if r.get("type") == rec_type and r.get("name") in acceptable_names]
+        if len(dups) > 1:
+            logger.warning(f"Duplicate {rec_type} records found for names {acceptable_names}: {[d['id'] for d in dups]}")
+
+    def _delete_record(self, zone_id: int, record_id: int) -> bool:
+        """Delete a DNS record by ID."""
+        try:
+            response = delete(
+                f"{self.api_base_url}/api/user/v1/zones/{zone_id}/records/{record_id}",
+                headers={"accept": "application/json"},
+                auth=BearerAuth(self.token),
+            )
+            if response.status_code != 204:
+                raise Exception(f"Delete returned status {response.status_code}")
+            logger.info(f"Deleted duplicate record ID {record_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Could not delete record {record_id}: {e}")
+            return False
+
+    def _deduplicate_records(self, zone_id: int, records: List[Dict[str, Any]], rec_type: str, acceptable_names: List[str]) -> None:
+        """Ensure only one record of type/name exists. Keeps earliest (lowest id)."""
+        dups = sorted([r for r in records if r.get("type") == rec_type and r.get("name") in acceptable_names], key=lambda r: r.get("id"))
+        # keep first, delete rest
+        for rec in dups[1:]:
+            self._delete_record(zone_id, rec["id"])
+
     def update_dns(self) -> None:
         """Update DNS records for all domains if necessary"""
         try:
             # Get current IP address
-            current_ip = self.get_current_ip()
+            current_ipv4 = self.get_current_ip(ipv4=True)
+            current_ipv6 = self.get_current_ip(ipv4=False)
             
             for domain in self.domains:
                 try:
@@ -288,36 +375,72 @@ class HosttechApi:
                     # Get records for domain
                     records = self.get_records(domain, zone_id)
                     
-                    # For wildcard domains, we might need to create the record if it doesn't exist
-                    if domain.startswith('*.') and not records:
-                        logger.info(f"Creating new wildcard record for {domain}")
-                        if self.create_wildcard_record(zone_id, current_ip):
-                            logger.info(f"Successfully created wildcard record for {domain}")
-                        continue
+                    # Ensure required record types exist for this domain
+                    is_wildcard = domain.startswith('*.')
+                    # Determine acceptable names for root, wildcard or subdomain
+                    if is_wildcard:
+                        acceptable_names = ["*"]
+                        record_name = "*"
+                    else:
+                        parts = domain.split('.')
+                        if len(parts) > 2:
+                            record_name = parts[0]
+                            acceptable_names = [record_name]
+                        else:
+                            acceptable_names = ["", "@", None]
+                            record_name = ""
+
+                    # Log duplicates and create missing records
+                    # Remove duplicates if present
+                    self._deduplicate_records(zone_id, records, "A", acceptable_names)
+                    self._deduplicate_records(zone_id, records, "AAAA", acceptable_names)
+                    self._log_duplicates(records, "A", acceptable_names)
+                    self._log_duplicates(records, "AAAA", acceptable_names)
+
+                    # Refresh records list after potential deletes
+                    records = self.get_records(domain, zone_id)
+
+                    if not self._record_exists(records, "A", acceptable_names):
+                        logger.info(f"Creating A record for {domain}")
+                        self.create_record(zone_id, record_name, current_ipv4, ipv4=True)
+                    if not self._record_exists(records, "AAAA", acceptable_names):
+                        logger.info(f"Creating AAAA record for {domain}")
+                        self.create_record(zone_id, record_name, current_ipv6, ipv4=False)
+
+                    # Refresh records after any creation so that subsequent update logic has them
+                    records = self.get_records(domain, zone_id)
                     
                     # If no records were found, log a warning and continue
                     if not records:
                         logger.warning(f"No matching records found for domain {domain}")
                         continue
                     
-                    # Check if update is needed
-                    need_update = False
+                    # Check if update is needed per record type
+                    need_update_ipv4 = False
+                    need_update_ipv6 = False
                     for record in records:
-                        if record.get("ipv4", "") != current_ip:
-                            need_update = True
-                            break
+                        if record.get("type") == "A" and record.get("ipv4", "") != current_ipv4:
+                            need_update_ipv4 = True
+                        if record.get("type") == "AAAA" and record.get("ipv6", "") != current_ipv6:
+                            need_update_ipv6 = True
                     
-                    if not need_update:
-                        logger.info(f"No update needed for domain {domain}, IP already set to {current_ip}")
+                    if not need_update_ipv4 and not need_update_ipv6:
+                        logger.info(f"No update needed for domain {domain}.")
                         continue
                     
-                    # Update records
-                    update_count = 0
+                    # Update records with the correct IP based on their type
+                    update_count_ipv4 = 0
+                    update_count_ipv6 = 0
                     for record in records:
-                        if self.update_record(zone_id, record, current_ip):
-                            update_count += 1
+                        if record.get("type") == "A":
+                            if self.update_record(zone_id, record, current_ipv4):
+                                update_count_ipv4 += 1
+                        elif record.get("type") == "AAAA":
+                            if self.update_record(zone_id, record, current_ipv6):
+                                update_count_ipv6 += 1
                     
-                    logger.info(f"Updated {update_count} records for domain {domain} to {current_ip}")
+                    logger.info(f"Updated {update_count_ipv4} records for domain {domain} to {current_ipv4}")
+                    logger.info(f"Updated {update_count_ipv6} records for domain {domain} to {current_ipv6}")
                     
                 except Exception as e:
                     logger.error(f"Error processing domain {domain}: {e}")
@@ -349,6 +472,9 @@ def main():
                         help=f"Update interval in minutes (default: {default_interval})")
     parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}",
                         help="Show program's version number and exit")
+    # add argument for non interval by --no-interval
+    parser.add_argument("--no-interval", action="store_true", help="Do not run in interval mode")
+    
     
     args = parser.parse_args()
     
@@ -383,6 +509,8 @@ def main():
     
     # Run periodic updates
     while True:
+        if args.no_interval:
+            break
         try:
             logger.info(f"Sleeping for {args.interval} minutes until next update")
             time.sleep(interval_seconds)
